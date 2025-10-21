@@ -1,0 +1,5 @@
+# En tu carpeta gimnasio/
+echo ".git" > .dockerignore
+echo ".gitignore" >> .dockerignore
+echo "target/" >> .dockerignore
+echo ".idea/" >> .dockerignore
