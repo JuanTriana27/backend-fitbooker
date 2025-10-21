@@ -11,158 +11,75 @@ import cl.gym.gimnasio.repository.UsuarioRepository;
 import cl.gym.gimnasio.service.ClaseService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class ClaseServiceImpl implements ClaseService {
 
     private final ClaseRepository claseRepository;
     private final UsuarioRepository usuarioRepository;
 
-    // Metodo para listar clases
     @Override
+    @Transactional(readOnly = true)
     public List<Clase> getAllClases(){
-        return  claseRepository.findAll();
+        return claseRepository.findAll();
     }
 
-    // Metodo para buscar clase por id
     @Override
+    @Transactional(readOnly = true)
     public ClaseDTO getClasePorId(Integer id){
-
-        // Consultar en db las clases por id
-        Clase clase = claseRepository.getReferenceById(id);
-
-        // Mapear hacia DTO el resultado que trae el modelo
-        ClaseDTO claseDTO = ClaseMapper.modelToDTO(clase);
-
-        // Retornar el objeto mapeado a dto
-        return claseDTO;
+        // CAMBIADO: findById en lugar de getReferenceById
+        Clase clase = claseRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Clase no encontrada con ID: " + id));
+        return ClaseMapper.modelToDTO(clase);
     }
 
-    // Metodo para crear clase
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public CreateClaseResponse createClase(CreateClaseRequest createClaseRequest) throws Exception{
+        System.out.println("🟡 Iniciando creación de clase: " + createClaseRequest.getNombre());
 
-        // Validar que la clase exista
-        if(createClaseRequest == null){
-            throw new Exception("La Clase no puede ser nula");
-        }
-
-        // Validar que el nombre no sea nulo
-        if(createClaseRequest.getNombre() == null){
-            throw new Exception("El nombre no puede ser nulo");
-        }
-
-        // Validar que la descripcion no sea nula
-        if(createClaseRequest.getDescripcion() == null){
-            throw new Exception("La descripcion no puede ser nula");
-        }
-
-        // Validar fecha clase
-        if(createClaseRequest.getFechaClase()== null){
-            throw new Exception("La fecha no puede ser nula");
-        }
-
-        // Validar Hora inicio
-        if(createClaseRequest.getHoraInicio() == null){
-            throw new Exception("La hora ingresada no puede ser nula");
-        }
-
-        // Validar Hora Fin
-        if(createClaseRequest.getHoraFin() == null){
-            throw new Exception("La hora ingresada no puede ser nula");
-        }
-
-        // Validar cupo maximo
-        if(createClaseRequest.getCupoMaximo() == null){
-            throw new Exception("La cupo maximo no puede ser nula");
-        }
-
-        // Validar cupo disponible
-        if(createClaseRequest.getCupoDisponible() == null){
-            throw new Exception("La cupo disponible no puede ser nula");
-        }
-
-        // Validar IDs de entidades relacionadas
-        if (createClaseRequest.getIdCoach() == null || createClaseRequest.getIdCoach() <= 0){
-            throw  new Exception("El Coach no puede ser nula");
-        }
+        // Validaciones
+        validarClaseRequest(createClaseRequest);
 
         // Obtener entidad relacionada
         Usuario usuario = usuarioRepository.findById(createClaseRequest.getIdCoach())
-                .orElseThrow(() -> new Exception("Coach no encontrado con ID: " +  createClaseRequest.getIdCoach()));
+                .orElseThrow(() -> new Exception("Coach no encontrado con ID: " + createClaseRequest.getIdCoach()));
 
         // Mapear request a modelo y establecer relaciones
         Clase clase = ClaseMapper.createRequestToModel(createClaseRequest);
         clase.setCoach(usuario);
 
         // Guardar en la db
-        clase = claseRepository.save(clase);
+        Clase claseGuardada = claseRepository.save(clase);
+        claseRepository.flush();
 
-        // convertir a Response y retornar
-        return ClaseMapper.modelToResponse(clase);
+        System.out.println("✅ Clase guardada exitosamente. ID: " + claseGuardada.getIdClase());
+
+        return ClaseMapper.modelToResponse(claseGuardada);
     }
 
-    // Metodo para actualizar clase
     @Override
+    @Transactional
     public CreateClaseResponse updateClase(Integer id, CreateClaseRequest createClaseRequest) throws Exception {
+        System.out.println("🟡 Actualizando clase ID: " + id);
 
         // Verificamos que exista
         Clase clase = claseRepository.findById(id)
                 .orElseThrow(() -> new Exception("Clase no Encontrada"));
-        
-        // Validar que la clase exista
-        if(createClaseRequest == null){
-            throw new Exception("La Clase no puede ser nula");
-        }
 
-        // Validar que el nombre no sea nulo
-        if(createClaseRequest.getNombre() == null){
-            throw new Exception("El nombre no puede ser nulo");
-        }
-
-        // Validar que la descripcion no sea nula
-        if(createClaseRequest.getDescripcion() == null){
-            throw new Exception("La descripcion no puede ser nula");
-        }
-
-        // Validar fecha clase
-        if(createClaseRequest.getFechaClase()== null){
-            throw new Exception("La fecha no puede ser nula");
-        }
-
-        // Validar Hora inicio
-        if(createClaseRequest.getHoraInicio() == null){
-            throw new Exception("La hora ingresada no puede ser nula");
-        }
-
-        // Validar Hora Fin
-        if(createClaseRequest.getHoraFin() == null){
-            throw new Exception("La hora ingresada no puede ser nula");
-        }
-
-        // Validar cupo maximo
-        if(createClaseRequest.getCupoMaximo() == null){
-            throw new Exception("La cupo maximo no puede ser nula");
-        }
-
-        // Validar cupo disponible
-        if(createClaseRequest.getCupoDisponible() == null){
-            throw new Exception("La cupo disponible no puede ser nula");
-        }
-
-        // Validar IDs de entidades relacionadas
-        if (createClaseRequest.getIdCoach() == null || createClaseRequest.getIdCoach() <= 0){
-            throw  new Exception("El Coach no puede ser nulo");
-        }
+        // Validaciones
+        validarClaseRequest(createClaseRequest);
 
         // Obtener entidad relacionada
         Usuario usuario = usuarioRepository.findById(createClaseRequest.getIdCoach())
-                .orElseThrow(() -> new Exception("Coach no encontrado con ID: " +  createClaseRequest.getIdCoach()));
+                .orElseThrow(() -> new Exception("Coach no encontrado con ID: " + createClaseRequest.getIdCoach()));
 
-        // Actualizar los campos de la entidad existente
+        // Actualizar campos
         clase.setNombre(createClaseRequest.getNombre());
         clase.setDescripcion(createClaseRequest.getDescripcion());
         clase.setFechaClase(createClaseRequest.getFechaClase());
@@ -170,21 +87,21 @@ public class ClaseServiceImpl implements ClaseService {
         clase.setHoraFin(createClaseRequest.getHoraFin());
         clase.setCupoMaximo(createClaseRequest.getCupoMaximo());
         clase.setCupoDisponible(createClaseRequest.getCupoDisponible());
-
-        // Entidad relacionada
         clase.setCoach(usuario);
 
-        // Guardar cambios en db
-        Clase claseUpdate = claseRepository.save(clase);
+        // Guardar cambios
+        Clase claseActualizada = claseRepository.save(clase);
+        claseRepository.flush();
 
-        // Mapear a CreateClaseResponse
-        return ClaseMapper.modelToResponse(claseUpdate);
+        System.out.println("✅ Clase actualizada exitosamente. ID: " + claseActualizada.getIdClase());
 
+        return ClaseMapper.modelToResponse(claseActualizada);
     }
 
-    // Metodo para eliminar clase
     @Override
+    @Transactional
     public void deleteClase(Integer id) throws Exception{
+        System.out.println("🟡 Eliminando clase ID: " + id);
 
         // Verificamos que exista la clase
         if(!claseRepository.existsById(id)){
@@ -193,5 +110,36 @@ public class ClaseServiceImpl implements ClaseService {
 
         // Eliminamos
         claseRepository.deleteById(id);
+        System.out.println("✅ Clase eliminada exitosamente. ID: " + id);
+    }
+
+    private void validarClaseRequest(CreateClaseRequest request) throws Exception {
+        if(request == null){
+            throw new Exception("La Clase no puede ser nula");
+        }
+        if(request.getNombre() == null || request.getNombre().isBlank()){
+            throw new Exception("El nombre no puede ser nulo");
+        }
+        if(request.getDescripcion() == null || request.getDescripcion().isBlank()){
+            throw new Exception("La descripcion no puede ser nula");
+        }
+        if(request.getFechaClase()== null){
+            throw new Exception("La fecha no puede ser nula");
+        }
+        if(request.getHoraInicio() == null){
+            throw new Exception("La hora de inicio no puede ser nula");
+        }
+        if(request.getHoraFin() == null){
+            throw new Exception("La hora de fin no puede ser nula");
+        }
+        if(request.getCupoMaximo() == null){
+            throw new Exception("El cupo máximo no puede ser nulo");
+        }
+        if(request.getCupoDisponible() == null){
+            throw new Exception("El cupo disponible no puede ser nulo");
+        }
+        if (request.getIdCoach() == null || request.getIdCoach() <= 0){
+            throw new Exception("El Coach no puede ser nulo");
+        }
     }
 }

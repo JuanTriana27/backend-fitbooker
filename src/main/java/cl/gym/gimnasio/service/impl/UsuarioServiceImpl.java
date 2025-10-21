@@ -10,131 +10,88 @@ import cl.gym.gimnasio.service.UsuarioService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class UsuarioServiceImpl implements UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
-    private final PasswordEncoder passwordEncoder; // ← INYECTAR PasswordEncoder
+    private final PasswordEncoder passwordEncoder;
 
-    // Metodo para listar usuarios
     @Override
+    @Transactional(readOnly = true)
     public List<Usuario> getAllUsuarios() {
         return usuarioRepository.findAll();
     }
 
-    // Metodo para obtener usuarios por su ID
     @Override
+    @Transactional(readOnly = true)
     public UsuarioDTO getUsuarioPorId(Integer id) {
-        // Consultar en la db las personas por id
-        Usuario usuario = usuarioRepository.getReferenceById(id);
-
-        // Mapear hacia DTO el resultado que trae el modelo
-        UsuarioDTO usuarioDTO = UsuarioMapper.modelToDTO(usuario);
-
-        // Retornar el objeto mapeado a DTO
-        return usuarioDTO;
+        // CAMBIADO: findById en lugar de getReferenceById
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado con ID: " + id));
+        return UsuarioMapper.modelToDTO(usuario);
     }
 
-    // Metodo para crear usuario
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public CreateUsuarioResponse createUsuario(CreateUsuarioRequest createUsuarioRequest) throws Exception {
+        System.out.println("🟡 Iniciando creación de usuario: " + createUsuarioRequest.getEmail());
 
-        // Validar que el estado de Usuario no sea nulo
-        if (createUsuarioRequest == null) {
-            throw new Exception("El usuario no puede ser nulo.");
-        }
-
-        // Validar que el nombre no sea nulo
-        if (createUsuarioRequest.getNombre() == null ||
-                createUsuarioRequest.getNombre().isBlank()) {
-            throw new Exception("El nombre no puede ser nulo.");
-        }
-
-        // Validar que el email no sea nulo
-        if (createUsuarioRequest.getEmail() == null ||
-                createUsuarioRequest.getEmail().isBlank()) {
-            throw new Exception("El email no puede ser nulo.");
-        }
-
-        // Validar que la contraseña no sea nula
-        if (createUsuarioRequest.getPassword() == null ||
-                createUsuarioRequest.getPassword().isBlank()) {
-            throw new Exception("La password no puede ser nula.");
-        }
-
-        // Validar que el telefono no sea nulo
-        if (createUsuarioRequest.getTelefono() == null ||
-                createUsuarioRequest.getTelefono().isBlank()) {
-            throw new Exception("El telefono no puede ser nulo.");
-        }
-
-        // Validar que el rol no sea nulo
-        if (createUsuarioRequest.getRol() == null ||
-                createUsuarioRequest.getRol().isBlank()) {
-            throw new Exception("El rol no puede ser nulo.");
-        }
+        // Validaciones
+        validarUsuarioRequest(createUsuarioRequest);
 
         // Verificar si el email ya existe
         if (usuarioRepository.existsByEmail(createUsuarioRequest.getEmail())) {
             throw new Exception("El email ya está registrado.");
         }
 
-        // Convertir de Request a Model
-        Usuario usuario = UsuarioMapper.createRequestToModel(createUsuarioRequest);
+        try {
+            // Convertir de Request a Model
+            Usuario usuario = UsuarioMapper.createRequestToModel(createUsuarioRequest);
 
-        // HASHEAR LA CONTRASEÑA ANTES DE GUARDAR
-        String hashedPassword = passwordEncoder.encode(createUsuarioRequest.getPassword());
-        usuario.setPassword(hashedPassword);
+            // HASHEAR LA CONTRASEÑA
+            String hashedPassword = passwordEncoder.encode(createUsuarioRequest.getPassword());
+            usuario.setPassword(hashedPassword);
+            usuario.setFechaRegistro(new Date());
 
-        // Asignar fecha automática
-        usuario.setFechaRegistro(new Date());
+            System.out.println("🟡 Guardando usuario en BD...");
 
-        // Persistir el modelo en db
-        usuario = usuarioRepository.save(usuario);
+            // Persistir
+            Usuario usuarioGuardado = usuarioRepository.save(usuario);
+            usuarioRepository.flush(); // Forzar flush para detectar errores
 
-        // Convertir a response para retornar
-        CreateUsuarioResponse createUsuarioResponse = UsuarioMapper.modelToCreateResponse(usuario);
+            System.out.println("✅ Usuario guardado exitosamente. ID: " + usuarioGuardado.getIdUsuario());
 
-        // Retornar el Response persistido como lo solicita el método
-        return createUsuarioResponse;
+            // Convertir a response
+            CreateUsuarioResponse response = UsuarioMapper.modelToCreateResponse(usuarioGuardado);
+            System.out.println("✅ Respuesta preparada para: " + response.getEmail());
+
+            return response;
+
+        } catch (Exception e) {
+            System.err.println("❌ ERROR CRÍTICO al guardar usuario: " + e.getMessage());
+            e.printStackTrace();
+            throw new Exception("Error interno del servidor al crear usuario: " + e.getMessage());
+        }
     }
 
-    // Metodo para actualizar usuario
     @Override
+    @Transactional
     public CreateUsuarioResponse updateUsuario(Integer id, CreateUsuarioRequest createUsuarioRequest) throws Exception {
+        System.out.println("🟡 Actualizando usuario ID: " + id);
 
         // Validar que el usuario exista
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new Exception("El usuario no fue encontrado."));
 
-        // Validar que el nombre no sea nulo
-        if (createUsuarioRequest.getNombre() == null ||
-                createUsuarioRequest.getNombre().isBlank()) {
-            throw new Exception("El nombre no puede ser nulo.");
-        }
-
-        // Validar que el email no sea nulo
-        if (createUsuarioRequest.getEmail() == null ||
-                createUsuarioRequest.getEmail().isBlank()) {
-            throw new Exception("El email no puede ser nulo.");
-        }
-
-        // Validar que el telefono no sea nulo
-        if (createUsuarioRequest.getTelefono() == null ||
-                createUsuarioRequest.getTelefono().isBlank()) {
-            throw new Exception("El telefono no puede ser nulo.");
-        }
-
-        // Validar que el rol no sea nulo
-        if (createUsuarioRequest.getRol() == null ||
-                createUsuarioRequest.getRol().isBlank()) {
-            throw new Exception("El rol no puede ser nulo.");
-        }
+        // Validaciones
+        validarUsuarioRequest(createUsuarioRequest);
 
         // Verificar si el email ya existe en otro usuario
         if (!usuario.getEmail().equals(createUsuarioRequest.getEmail()) &&
@@ -142,7 +99,7 @@ public class UsuarioServiceImpl implements UsuarioService {
             throw new Exception("El email ya está registrado en otro usuario.");
         }
 
-        // Actualizar los datos del usuario con los nuevos valores
+        // Actualizar los datos del usuario
         usuario.setNombre(createUsuarioRequest.getNombre());
         usuario.setEmail(createUsuarioRequest.getEmail());
         usuario.setTelefono(createUsuarioRequest.getTelefono());
@@ -156,15 +113,18 @@ public class UsuarioServiceImpl implements UsuarioService {
         }
 
         // Guardar Usuario actualizado
-        usuario = usuarioRepository.save(usuario);
+        Usuario usuarioActualizado = usuarioRepository.save(usuario);
+        usuarioRepository.flush();
 
-        // Mapear y retornar el response
-        return UsuarioMapper.modelToCreateResponse(usuario);
+        System.out.println("✅ Usuario actualizado exitosamente. ID: " + usuarioActualizado.getIdUsuario());
+
+        return UsuarioMapper.modelToCreateResponse(usuarioActualizado);
     }
 
-    // Metodo para eliminar Usuario
     @Override
+    @Transactional
     public void deleteUsuario(Integer id) throws Exception {
+        System.out.println("🟡 Eliminando usuario ID: " + id);
 
         // Verificamos que exista el usuario
         if (!usuarioRepository.existsById(id)) {
@@ -173,5 +133,27 @@ public class UsuarioServiceImpl implements UsuarioService {
 
         // Eliminamos
         usuarioRepository.deleteById(id);
+        System.out.println("✅ Usuario eliminado exitosamente. ID: " + id);
+    }
+
+    private void validarUsuarioRequest(CreateUsuarioRequest request) throws Exception {
+        if (request == null) {
+            throw new Exception("El usuario no puede ser nulo.");
+        }
+        if (request.getNombre() == null || request.getNombre().isBlank()) {
+            throw new Exception("El nombre no puede ser nulo.");
+        }
+        if (request.getEmail() == null || request.getEmail().isBlank()) {
+            throw new Exception("El email no puede ser nulo.");
+        }
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new Exception("La password no puede ser nula.");
+        }
+        if (request.getTelefono() == null || request.getTelefono().isBlank()) {
+            throw new Exception("El telefono no puede ser nulo.");
+        }
+        if (request.getRol() == null || request.getRol().isBlank()) {
+            throw new Exception("El rol no puede ser nulo.");
+        }
     }
 }
